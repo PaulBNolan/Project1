@@ -39,6 +39,12 @@ private:
 	bool keyPressed = false;
 	bool cubeFired = false;
 	vec3 animation = vec3(0.0f);
+
+	vec3 player = vec3(0.0, 0.0, 0.0);
+	float score = 0.0f;
+	float xPos = 0.0f;
+	float zPos = 0.0f;
+
 	float rotationX = 0.0f;
 	float rotationY = 0.0f;
 

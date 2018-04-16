@@ -178,6 +178,8 @@ void Game::run()
 				{
 					model = translate(model, glm::vec3(0, 0, 0.01));
 				}
+
+				xPos -= 0.01;
 			}
 
 			else if (sf::Keyboard::isKeyPressed(sf::Keyboard::D))
@@ -201,6 +203,7 @@ void Game::run()
 				{
 					model = translate(model, glm::vec3(0, 0, -0.01));
 				}
+				xPos += 0.01;
 			}
 
 			else if (sf::Keyboard::isKeyPressed(sf::Keyboard::W))
@@ -603,16 +606,113 @@ void Game::update()
 {
 	if (cubeFired == true)
 	{
-		model = translate(model, glm::vec3(0, 0, -0.01));
+		if (rotationX == 0)
+		{
+			model = translate(model, glm::vec3(0, 0, -0.01));
 
-		m_height += 0.01f;
+			m_height += 0.01f;
 
-	    if (m_height >= 12.0f)
-	    {
-		  model = translate(model, glm::vec3(0, -m_height, 0));
-		  m_height = 0.0;
-		  cubeFired = false;
-	     }
+			player = vec3(xPos, 0.0, m_height);
+
+			if (m_height >= 12.0f)
+			{
+				model = translate(model, glm::vec3(0, 0, m_height));
+				m_height = 0.0;
+				cubeFired = false;
+
+				player = vec3(0.0, 0.0, 0.0);
+			}
+			else if (player.x >= -2 && player.x <= 1 && player.z >= 4)
+			{
+				model = translate(model, glm::vec3(0, 0, m_height));
+				m_height = 0.0;
+				cubeFired = false;
+
+				player = vec3(0.0, 0.0, 0.0);
+
+				score += 100;
+			}
+		}
+
+		else if (rotationX == 180)
+		{
+			model = translate(model, glm::vec3(0, 0, 0.01));
+
+			m_height += 0.01f;
+
+			if (m_height >= 12.0f)
+			{
+				model = translate(model, glm::vec3(0, 0, -m_height));
+				m_height = 0.0;
+				cubeFired = false;
+
+				player = vec3(0.0, 0.0, 0.0);
+			}
+
+			else if (player.x >= -2 && player.x <= 1 && player.z >= 4)
+			{
+				model = translate(model, glm::vec3(0, 0, m_height));
+				m_height = 0.0;
+				cubeFired = false;
+
+				player = vec3(0.0, 0.0, 0.0);
+
+				score -= 100;
+			}
+		}
+
+		else if (rotationX == 90)
+		{
+			model = translate(model, glm::vec3(0.01, 0, 0));
+
+			m_height += 0.01f;
+
+			if (m_height >= 12.0f)
+			{
+				model = translate(model, glm::vec3(-m_height, 0, 0));
+				m_height = 0.0;
+				cubeFired = false;
+
+				player = vec3(0.0, 0.0, 0.0);
+			}
+
+			else if (player.x >= -2 && player.x <= 1 && player.z >= 4)
+			{
+				model = translate(model, glm::vec3(0, 0, m_height));
+				m_height = 0.0;
+				cubeFired = false;
+
+				player = vec3(0.0, 0.0, 0.0);
+
+				score -= 100;
+			}
+		}
+
+		else if (rotationX == 270)
+		{
+			model = translate(model, glm::vec3(-0.01, 0, 0));
+
+			m_height += 0.01f;
+
+			if (m_height >= 12.0f)
+			{
+				model = translate(model, glm::vec3(m_height, 0, 0));
+				m_height = 0.0;
+				cubeFired = false;
+
+				player = vec3(0.0, 0.0, 0.0);
+			}
+			else if (player.x >= -2 && player.x <= 1 && player.z >= 4)
+			{
+				model = translate(model, glm::vec3(0, 0, m_height));
+				m_height = 0.0;
+				cubeFired = false;
+
+				player = vec3(0.0, 0.0, 0.0);
+
+				score -= 100;
+			}
+		}
     }
 
 
@@ -633,13 +733,6 @@ void Game::update()
 	DEBUG_MSG(nmodel[0].x);
 	DEBUG_MSG(nmodel[0].y);
 	DEBUG_MSG(nmodel[0].z);
-
-	std::cout << model[0].x << std::endl;
-
-	if (rotationX == 0 && (nmodel[0].z < model[0].z + width) && (nmodel[0].x < model[0].x + width))
-	{
-		std::cout << "111111111111111111111111111111111111";
-	}
 }
 
 void Game::render()
@@ -659,11 +752,8 @@ void Game::render()
 	int x = Mouse::getPosition(window).x;
 	int y = Mouse::getPosition(window).y;
 
-	string hud = "Heads Up Display ["
-		+ string(toString(x))
-		+ "]["
-		+ string(toString(y))
-		+ "]";
+	string hud = "Score:"
+		+ string(toString(score));
 
 	Text text(hud, font);
 
