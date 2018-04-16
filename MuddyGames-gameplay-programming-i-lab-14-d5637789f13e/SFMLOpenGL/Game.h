@@ -45,8 +45,10 @@ private:
 	float m_height = 0.0f;
 	bool isRunning = false;
 	void initialize();
+	void initializeNPCCube();
 	void update();
 	void render();
+	void renderNPC();
 	void unload();
 };
 

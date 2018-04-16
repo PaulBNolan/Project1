@@ -1,5 +1,6 @@
 #include <Game.h>
 #include <Cube.h>
+#include <CubeNPC.h>
 #include <Easing.h>
 
 // Helper to convert Number to String for HUD
@@ -45,6 +46,38 @@ mat4 mvp, projection,
 Font font;						// Game font
 
 float x_offset, y_offset, z_offset; // offset on screen (Vertex Shader)
+
+
+
+GLuint	nvsid,		// Vertex Shader ID
+nfsid,		// Fragment Shader ID
+nprogID,		// Program ID
+nvao = 0,	// Vertex Array ID
+nvbo,		// Vertex Buffer ID
+nvib,		// Vertex Index Buffer
+nto[1];		// Texture ID
+GLint	npositionID,	// Position ID
+ncolorID,	// Color ID
+ntextureID,	// Texture ID
+nuvID,		// UV ID
+nmvpID,		// Model View Projection ID
+nx_offsetID, // X offset ID
+ny_offsetID,	// Y offset ID
+nz_offsetID;	// Z offset ID
+
+GLenum	nerror;		// OpenGL Error Code
+
+int nwidth;						// Width of texture
+int nheight;						// Height of texture
+int ncomp_count;					// Component of texture
+
+unsigned char* nimg_data;		// image data
+
+mat4 nmvp, nprojection,
+nview, nmodel;			// Model View Projection
+
+
+float nx_offset, ny_offset, nz_offset; // offset on screen (Vertex Shader)
 
 Game::Game() : 
 	window(VideoMode(800, 600), 
@@ -376,13 +409,201 @@ void Game::initialize()
 
 	// Load Font
 	font.loadFromFile(".//Assets//Fonts//BBrick.ttf");
+
+	initializeNPCCube();
+}
+
+void Game::initializeNPCCube()
+{
+	GLint isCompiled = 0;
+	GLint isLinked = 0;
+
+	if (!(!glewInit())) { DEBUG_MSG("glewInit() failed"); }
+
+	// Copy UV's to all faces
+	for (int i = 1; i < 6; i++)
+		memcpy(&nuvs[i * 4 * 2], &nuvs[0], 2 * 4 * sizeof(GLfloat));
+
+	DEBUG_MSG(glGetString(GL_VENDOR));
+	DEBUG_MSG(glGetString(GL_RENDERER));
+	DEBUG_MSG(glGetString(GL_VERSION));
+
+	// Vertex Array Buffer
+	glGenBuffers(1, &nvbo);		// Generate Vertex Buffer
+	glBindBuffer(GL_ARRAY_BUFFER, nvbo);
+
+	// Vertices (3) x,y,z , Colors (4) RGBA, UV/ST (2)
+	glBufferData(GL_ARRAY_BUFFER, ((3 * NVERTICES) + (4 * NCOLORS) + (2 * NUVS)) * sizeof(GLfloat), NULL, GL_STATIC_DRAW);
+
+	glGenBuffers(1, &nvib); //Generate Vertex Index Buffer
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, nvib);
+
+	// Indices to be drawn
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, 3 * NINDICES * sizeof(GLuint), nindices, GL_STATIC_DRAW);
+
+	// NOTE: uniforms values must be used within Shader so that they 
+	// can be retreived
+	const char* vs_src =
+		"#version 400\n\r"
+		""
+		"in vec3 sv_position;"
+		"in vec4 sv_color;"
+		"in vec2 sv_uv;"
+		""
+		"out vec4 color;"
+		"out vec2 uv;"
+		""
+		"uniform mat4 sv_mvp;"
+		"uniform float sv_x_offset;"
+		"uniform float sv_y_offset;"
+		"uniform float sv_z_offset;"
+		""
+		"void main() {"
+		"	color = sv_color;"
+		"	uv = sv_uv;"
+		//"	gl_Position = vec4(sv_position, 1);"
+		"	gl_Position = sv_mvp * vec4(sv_position.x + sv_x_offset, sv_position.y + sv_y_offset, sv_position.z + sv_z_offset, 1 );"
+		"}"; //Vertex Shader Src
+
+	DEBUG_MSG("Setting Up Vertex Shader");
+
+	nvsid = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(nvsid, 1, (const GLchar**)&vs_src, NULL);
+	glCompileShader(nvsid);
+
+	// Check is Shader Compiled
+	glGetShaderiv(nvsid, GL_COMPILE_STATUS, &isCompiled);
+
+	if (isCompiled == GL_TRUE) {
+		DEBUG_MSG("Vertex Shader Compiled");
+		isCompiled = GL_FALSE;
+	}
+	else
+	{
+		DEBUG_MSG("ERROR: Vertex Shader Compilation Error");
+	}
+
+	const char* fs_src =
+		"#version 400\n\r"
+		""
+		"uniform sampler2D f_texture;"
+		""
+		"in vec4 color;"
+		"in vec2 uv;"
+		""
+		"out vec4 fColor;"
+		""
+		"void main() {"
+		"	fColor = color - texture2D(f_texture, uv);"
+		""
+		"}"; //Fragment Shader Src
+
+	DEBUG_MSG("Setting Up Fragment Shader");
+
+	nfsid = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(nfsid, 1, (const GLchar**)&fs_src, NULL);
+	glCompileShader(nfsid);
+
+	// Check is Shader Compiled
+	glGetShaderiv(nfsid, GL_COMPILE_STATUS, &isCompiled);
+
+	if (isCompiled == GL_TRUE) {
+		DEBUG_MSG("Fragment Shader Compiled");
+		isCompiled = GL_FALSE;
+	}
+	else
+	{
+		DEBUG_MSG("ERROR: Fragment Shader Compilation Error");
+	}
+
+	DEBUG_MSG("Setting Up and Linking Shader");
+	nprogID = glCreateProgram();
+	glAttachShader(nprogID, nvsid);
+	glAttachShader(nprogID, nfsid);
+	glLinkProgram(nprogID);
+
+	// Check is Shader Linked
+	glGetProgramiv(nprogID, GL_LINK_STATUS, &isLinked);
+
+	if (isLinked == 1) {
+		DEBUG_MSG("Shader Linked");
+	}
+	else
+	{
+		DEBUG_MSG("ERROR: Shader Link Error");
+	}
+
+	// Set image data
+	// https://github.com/nothings/stb/blob/master/stb_image.h
+	nimg_data = stbi_load(filename.c_str(), &nwidth, &nheight, &ncomp_count, 4);
+
+	if (nimg_data == NULL)
+	{
+		DEBUG_MSG("ERROR: Texture not loaded");
+	}
+
+	glEnable(GL_TEXTURE_2D);
+	glGenTextures(1, &nto[0]);
+	glBindTexture(GL_TEXTURE_2D, nto[0]);
+
+	// Wrap around
+	// https://www.khronos.org/opengles/sdk/docs/man/xhtml/glTexParameter.xml
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
+	// Filtering
+	// https://www.khronos.org/opengles/sdk/docs/man/xhtml/glTexParameter.xml
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+	// Bind to OpenGL
+	// https://www.khronos.org/opengles/sdk/docs/man/xhtml/glTexImage2D.xml
+	glTexImage2D(
+		GL_TEXTURE_2D,			// 2D Texture Image
+		0,						// Mipmapping Level 
+		GL_RGBA,				// GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA, GL_RGB, GL_BGR, GL_RGBA 
+		nwidth,					// Width
+		nheight,					// Height
+		0,						// Border
+		GL_RGBA,				// Bitmap
+		GL_UNSIGNED_BYTE,		// Specifies Data type of image data
+		nimg_data				// Image Data
+	);
+
+	// Projection Matrix 
+	nprojection = perspective(
+		45.0f,					// Field of View 45 degrees
+		4.0f / 3.0f,			// Aspect ratio
+		5.0f,					// Display Range Min : 0.1f unit
+		100.0f					// Display Range Max : 100.0f unit
+	);
+
+	// Camera Matrix
+	nview = lookAt(
+		vec3(0.0f, 0.0f, 10.0f),	// Camera (x,y,z), in World Space
+		vec3(0.0f, 0.0f, 0.0f),		// Camera looking at origin
+		vec3(0.0f, 1.0f, 0.0f)		// 0.0f, 1.0f, 0.0f Look Down and 0.0f, -1.0f, 0.0f Look Up
+	);
+
+	// Model matrix
+	nmodel = mat4(
+		1.0f					// Identity Matrix
+	);
+
+	// Enable Depth Test
+	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LESS);
+	glEnable(GL_CULL_FACE);
+
+	// Load Font
+	font.loadFromFile(".//Assets//Fonts//BBrick.ttf");
 }
 
 void Game::update()
 {
 	if (cubeFired == true)
 	{
-		model = translate(model, glm::vec3(0, 0.01, 0));
+		model = translate(model, glm::vec3(0, 0, -0.01));
 
 		m_height += 0.01f;
 
@@ -406,6 +627,19 @@ void Game::update()
 	DEBUG_MSG(model[0].x);
 	DEBUG_MSG(model[0].y);
 	DEBUG_MSG(model[0].z);
+
+	nmvp = nprojection * nview * nmodel;
+
+	DEBUG_MSG(nmodel[0].x);
+	DEBUG_MSG(nmodel[0].y);
+	DEBUG_MSG(nmodel[0].z);
+
+	std::cout << model[0].x << std::endl;
+
+	if (rotationX == 0 && (nmodel[0].z < model[0].z + width) && (nmodel[0].x < model[0].x + width))
+	{
+		std::cout << "111111111111111111111111111111111111";
+	}
 }
 
 void Game::render()
@@ -507,7 +741,7 @@ void Game::render()
 
 	// Draw Element Arrays
 	glDrawElements(GL_TRIANGLES, 3 * INDICES, GL_UNSIGNED_INT, NULL);
-	window.display();
+	//window.display();
 
 	// Disable Arrays
 	glDisableVertexAttribArray(positionID);
@@ -526,6 +760,96 @@ void Game::render()
 	if (error != GL_NO_ERROR) {
 		DEBUG_MSG(error);
 	}
+
+	renderNPC();
+}
+
+void Game::renderNPC()
+{
+	// Rebind Buffers and then set SubData
+	glBindBuffer(GL_ARRAY_BUFFER, nvbo);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, nvib);
+
+	// Use Progam on GPU
+	glUseProgram(nprogID);
+
+	// Find variables within the shader
+	// https://www.khronos.org/opengles/sdk/docs/man/xhtml/glGetAttribLocation.xml
+	npositionID = glGetAttribLocation(nprogID, "sv_position");
+	if (npositionID < 0) { DEBUG_MSG("positionID not found"); }
+
+	ncolorID = glGetAttribLocation(nprogID, "sv_color");
+	if (ncolorID < 0) { DEBUG_MSG("colorID not found"); }
+
+	nuvID = glGetAttribLocation(nprogID, "sv_uv");
+	if (nuvID < 0) { DEBUG_MSG("uvID not found"); }
+
+	ntextureID = glGetUniformLocation(nprogID, "f_texture");
+	if (ntextureID < 0) { DEBUG_MSG("textureID not found"); }
+
+	nmvpID = glGetUniformLocation(nprogID, "sv_mvp");
+	if (nmvpID < 0) { DEBUG_MSG("mvpID not found"); }
+
+	nx_offsetID = glGetUniformLocation(nprogID, "sv_x_offset");
+	if (nx_offsetID < 0) { DEBUG_MSG("x_offsetID not found"); }
+
+	ny_offsetID = glGetUniformLocation(nprogID, "sv_y_offset");
+	if (ny_offsetID < 0) { DEBUG_MSG("y_offsetID not found"); }
+
+	nz_offsetID = glGetUniformLocation(nprogID, "sv_z_offset");
+	if (nz_offsetID < 0) { DEBUG_MSG("z_offsetID not found"); };
+
+	// VBO Data....vertices, colors and UV's appended
+	glBufferSubData(GL_ARRAY_BUFFER, 0 * NVERTICES * sizeof(GLfloat), 3 * NVERTICES * sizeof(GLfloat), nvertices);
+	glBufferSubData(GL_ARRAY_BUFFER, 3 * NVERTICES * sizeof(GLfloat), 4 * NCOLORS * sizeof(GLfloat), ncolors);
+	glBufferSubData(GL_ARRAY_BUFFER, ((3 * NVERTICES) + (4 * NCOLORS)) * sizeof(GLfloat), 2 * NUVS * sizeof(GLfloat), uvs);
+
+	// Send transformation to shader mvp uniform [0][0] is start of array
+	glUniformMatrix4fv(nmvpID, 1, GL_FALSE, &nmvp[0][0]);
+
+	// Set Active Texture .... 32 GL_TEXTURE0 .... GL_TEXTURE31
+	glActiveTexture(GL_TEXTURE0);
+	glUniform1i(ntextureID, 0); // 0 .... 31
+
+							   // Set the X, Y and Z offset (this allows for multiple cubes via different shaders)
+							   // Experiment with these values to change screen positions
+	glUniform1f(nx_offsetID, 0.00f);
+	glUniform1f(ny_offsetID, 0.00f);
+	glUniform1f(nz_offsetID, 0.00f);
+
+	// Set pointers for each parameter (with appropriate starting positions)
+	// https://www.khronos.org/opengles/sdk/docs/man/xhtml/glVertexAttribPointer.xml
+	glVertexAttribPointer(npositionID, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	glVertexAttribPointer(ncolorID, 4, GL_FLOAT, GL_FALSE, 0, (VOID*)(3 * NVERTICES * sizeof(GLfloat)));
+	glVertexAttribPointer(nuvID, 2, GL_FLOAT, GL_FALSE, 0, (VOID*)(((3 * NVERTICES) + (4 * NCOLORS)) * sizeof(GLfloat)));
+
+	// Enable Arrays
+	glEnableVertexAttribArray(npositionID);
+	glEnableVertexAttribArray(ncolorID);
+	glEnableVertexAttribArray(nuvID);
+
+	// Draw Element Arrays
+	glDrawElements(GL_TRIANGLES, 3 * NINDICES, GL_UNSIGNED_INT, NULL);
+	window.display();
+
+	// Disable Arrays
+	glDisableVertexAttribArray(npositionID);
+	glDisableVertexAttribArray(ncolorID);
+	glDisableVertexAttribArray(nuvID);
+
+	// Unbind Buffers with 0 (Resets OpenGL States...important step)
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+	// Reset the Shader Program to Use
+	glUseProgram(0);
+
+	// Check for OpenGL Error code
+	nerror = glGetError();
+	if (nerror != GL_NO_ERROR) {
+		DEBUG_MSG(nerror);
+	}
+
 }
 
 void Game::unload()
@@ -541,5 +865,14 @@ void Game::unload()
 	glDeleteBuffers(1, &vbo);		// Delete Vertex Buffer
 	glDeleteBuffers(1, &vib);		// Delete Vertex Index Buffer
 	stbi_image_free(img_data);		// Free image stbi_image_free(..)
+
+	glDetachShader(nprogID, nvsid);	// Shader could be used with more than one progID
+	glDetachShader(nprogID, nfsid);	// ..
+	glDeleteShader(nvsid);			// Delete Vertex Shader
+	glDeleteShader(nfsid);			// Delete Fragment Shader
+	glDeleteProgram(nprogID);		// Delete Shader
+	glDeleteBuffers(1, &nvbo);		// Delete Vertex Buffer
+	glDeleteBuffers(1, &nvib);		// Delete Vertex Index Buffer
+	stbi_image_free(nimg_data);		// Free image stbi_image_free(..)
 }
 
